@@ -453,7 +453,7 @@ const MapView = () => {
                 <span className="ml-4 text-sm text-[#bdbdbd] truncate">{route.desc}</span>
               </div>
             ))
-          }
+          )}
         </div>
       </motion.div>
     </div>
