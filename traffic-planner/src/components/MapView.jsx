@@ -206,18 +206,47 @@ const MapView = () => {
     setLocationTried(true);
   };
 
-  // When user clicks on map, set destination coordinates and reverse geocode address
+  // When user clicks on map, set destination coordinates, reverse geocode address, and calculate route
   function MapClickHandler() {
-    useMap().on('click', async (e) => {
-      const coords = [e.latlng.lat, e.latlng.lng];
-      setDestCoords(coords);
-      setSelectedOnMap(coords);
-      setLoading(true);
-      const address = await reverseGeocode(coords);
-      setSelectedOnMapAddress(address);
-      setDestination(address);
-      setLoading(false);
-    });
+    const map = useMap();
+    useEffect(() => {
+      const handleClick = async (e) => {
+        const coords = [e.latlng.lat, e.latlng.lng];
+        setDestCoords(coords);
+        setSelectedOnMap(coords);
+        setLoading(true);
+        const address = await reverseGeocode(coords);
+        setSelectedOnMapAddress(address);
+        setDestination(address);
+
+        // Calculate route only once here
+        setError('');
+        setRoutes([]);
+        const start = userCoords || DEFAULT_START_COORDS;
+        const distance = getDistanceFromLatLonInMeters(start, coords);
+        if (distance > 150000) {
+          setError("Route distance exceeds 150km limit for free API. Please choose a closer destination.");
+          setLoading(false);
+          return;
+        }
+        const orsData = await fetchRoute(start, coords);
+        if (!orsData || !orsData.features || orsData.features.length === 0) {
+          setError("No route found.");
+          setLoading(false);
+          return;
+        }
+        const newRoutes = orsData.features.map((feature, idx) => ({
+          id: idx + 1,
+          time: Math.round(feature.properties.summary.duration / 60),
+          desc: `Route ${idx + 1} to ${address}`,
+          geometry: feature.geometry.coordinates.map(([lon, lat]) => [lat, lon]),
+        }));
+        setRoutes(newRoutes);
+        setLoading(false);
+      };
+      map.on('click', handleClick);
+      return () => map.off('click', handleClick);
+    }, [userCoords]);
     return null;
   }
 
@@ -279,41 +308,6 @@ const MapView = () => {
     }
     setLoading(false);
   };
-
-  // When user selects destination on map, auto-fetch route
-  useEffect(() => {
-    if (selectedOnMap && userCoords) {
-      (async () => {
-        setError('');
-        setRoutes([]);
-        setLoading(true);
-        const start = userCoords || DEFAULT_START_COORDS;
-        const coords = selectedOnMap;
-        // Check distance before routing
-        const distance = getDistanceFromLatLonInMeters(start, coords);
-        if (distance > 150000) {
-          setError("Route distance exceeds 150km limit for free API. Please choose a closer destination.");
-          setLoading(false);
-          return;
-        }
-        const orsData = await fetchRoute(start, coords);
-        if (!orsData || !orsData.features || orsData.features.length === 0) {
-          setError("No route found.");
-          setLoading(false);
-          return;
-        }
-        const newRoutes = orsData.features.map((feature, idx) => ({
-          id: idx + 1,
-          time: Math.round(feature.properties.summary.duration / 60),
-          desc: `Route ${idx + 1} to ${selectedOnMapAddress || destination}`,
-          geometry: feature.geometry.coordinates.map(([lon, lat]) => [lat, lon]),
-        }));
-        setRoutes(newRoutes);
-        setLoading(false);
-      })();
-    }
-    // eslint-disable-next-line
-  }, [selectedOnMap, userCoords, selectedOnMapAddress]);
 
   const startLabel = userCoords
     ? "Your Location"
@@ -459,7 +453,7 @@ const MapView = () => {
                 <span className="ml-4 text-sm text-[#bdbdbd] truncate">{route.desc}</span>
               </div>
             ))
-          )}
+          }
         </div>
       </motion.div>
     </div>
